@@ -1,5 +1,7 @@
 // components/customMultiSelect.js - Custom Multi-Select Dropdown Filter for Tabulator
+// DIRECT COPY of NBA basketball version with color change (#f97316 -> #b8860b)
 // Dropdowns open ABOVE the table header
+// Includes state sync, expanded row preservation, debounced filter updates
 
 export function createCustomMultiSelect(cell, onRendered, success, cancel, options = {}) {
     const dropdownWidth = options.dropdownWidth || 200;
@@ -34,42 +36,20 @@ export function createCustomMultiSelect(cell, onRendered, success, cancel, optio
     
     var column = cell.getColumn();
     
-    // Try to load values from the table data
-    function tryLoadValues() {
-        loadAttempts++;
-        var tableData = table.getData();
-        
-        if (tableData && tableData.length > 0) {
-            // Check if custom valuesLookup is provided
-            var colDef = column.getDefinition();
-            if (colDef.headerFilterParams && colDef.headerFilterParams.valuesLookup) {
-                allValues = colDef.headerFilterParams.valuesLookup(cell);
-            } else {
-                var values = tableData.map(function(row) {
-                    return String(row[field] || '');
-                });
-                allValues = [...new Set(values)].filter(function(v) { return v !== '' && v !== 'undefined' && v !== 'null'; });
-                allValues.sort();
-            }
-            
-            selectedValues = [...allValues];
-            button.textContent = "All ▾";
-            isInitialized = true;
-            return true;
-        }
-        
-        if (loadAttempts < 20) {
-            setTimeout(tryLoadValues, 500);
-        } else {
-            button.textContent = "No data";
-        }
-        return false;
+    // Store expanded rows before filter operations (simplified for CBB - no expandable rows)
+    function saveExpandedState() {
+        return new Set();
     }
     
-    // Create dropdown element
+    function restoreExpandedState(expandedRows) {
+        // No-op for CBB (no expandable rows)
+    }
+    
     function createDropdown() {
         var existing = document.getElementById(dropdownId);
-        if (existing) existing.remove();
+        if (existing) {
+            existing.remove();
+        }
         
         var dropdown = document.createElement("div");
         dropdown.id = dropdownId;
@@ -103,11 +83,17 @@ export function createCustomMultiSelect(cell, onRendered, success, cancel, optio
     
     column.getDefinition().headerFilterFunc = customFilterFunction;
     
-    // Debounced filter update
+    // Debounced filter update with state preservation
     function updateFilter() {
-        if (filterTimeout) clearTimeout(filterTimeout);
+        if (filterTimeout) {
+            clearTimeout(filterTimeout);
+        }
+        
+        const expandedState = saveExpandedState();
         
         filterTimeout = setTimeout(() => {
+            console.log("Updating filter for", field, "- selected:", selectedValues.length, "of", allValues.length);
+            
             if (selectedValues.length === 0) {
                 success("IMPOSSIBLE_VALUE_THAT_MATCHES_NOTHING");
             } else if (selectedValues.length === allValues.length) {
@@ -115,162 +101,324 @@ export function createCustomMultiSelect(cell, onRendered, success, cancel, optio
             } else {
                 success([...selectedValues]);
             }
+            
+            if (table.getRowCount && table.getRowCount() > 1000) {
+                requestAnimationFrame(() => {
+                    table.redraw(false);
+                    restoreExpandedState(expandedState);
+                });
+            } else {
+                table.redraw();
+                restoreExpandedState(expandedState);
+            }
         }, 150);
     }
     
-    // Toggle dropdown
-    function toggleDropdown() {
-        if (!isInitialized) return;
+    // Check for existing filter value and sync with it
+    function getCurrentFilterValue() {
+        const headerFilters = table.getHeaderFilters();
+        const currentFilter = headerFilters.find(f => f.field === field);
         
-        isOpen = !isOpen;
-        var dropdown = document.getElementById(dropdownId);
+        if (currentFilter && currentFilter.value) {
+            if (Array.isArray(currentFilter.value)) {
+                return currentFilter.value;
+            }
+            if (currentFilter.value === "IMPOSSIBLE_VALUE_THAT_MATCHES_NOTHING") {
+                return [];
+            }
+        }
+        return null;
+    }
+    
+    // Load unique values from table data
+    function loadValues() {
+        var data = table.getData();
+        if (!data || data.length === 0) return;
         
-        if (!dropdown) {
-            dropdown = createDropdown();
+        // Check if custom valuesLookup is provided
+        var colDef = column.getDefinition();
+        if (colDef.headerFilterParams && colDef.headerFilterParams.valuesLookup) {
+            allValues = colDef.headerFilterParams.valuesLookup(cell);
+        } else {
+            var uniqueValues = new Set();
+            data.forEach(function(row) {
+                var val = row[field];
+                if (val !== null && val !== undefined && val !== '' && String(val) !== 'undefined' && String(val) !== 'null') {
+                    uniqueValues.add(String(val));
+                }
+            });
+            allValues = Array.from(uniqueValues);
         }
         
-        if (isOpen) {
-            // Position dropdown ABOVE the button
-            var rect = button.getBoundingClientRect();
-            dropdown.style.display = 'block';
-            
-            // Temporarily show to measure height
-            var dropdownHeight = dropdown.offsetHeight || 200;
-            
-            dropdown.style.left = rect.left + 'px';
-            dropdown.style.top = (rect.top - dropdownHeight - 2) + 'px';
-            dropdown.style.width = Math.max(rect.width, dropdownWidth) + 'px';
-            
-            // Build dropdown content
-            buildDropdownContent(dropdown);
+        // Sort - numeric fields sort numerically
+        if (field === "Player Prop Line" || field === "Game Line" || field === "Player Prop Value") {
+            allValues.sort(function(a, b) {
+                return parseFloat(a) - parseFloat(b);
+            });
         } else {
-            dropdown.style.display = 'none';
+            allValues.sort();
+        }
+        
+        // Check for existing filter and sync selected values
+        const existingFilter = getCurrentFilterValue();
+        
+        if (existingFilter !== null) {
+            selectedValues = existingFilter;
+            console.log(`Synced with existing filter for ${field}: ${selectedValues.length} of ${allValues.length} selected`);
+        } else {
+            selectedValues = [...allValues];
+        }
+        
+        isInitialized = true;
+        updateButtonText();
+        
+        console.log(`Loaded ${allValues.length} unique values for ${field}`);
+    }
+    
+    function updateButtonText() {
+        if (selectedValues.length === 0) {
+            button.textContent = "None";
+            button.style.color = "#999";
+        } else if (selectedValues.length === allValues.length) {
+            button.textContent = "All";
+            button.style.color = "#333";
+        } else {
+            button.textContent = selectedValues.length + " of " + allValues.length;
+            button.style.color = "#b8860b";
         }
     }
     
-    // Build dropdown content
-    function buildDropdownContent(dropdown) {
+    function createOptionElement(value, isSelectAll = false) {
+        var optionDiv = document.createElement('div');
+        optionDiv.style.cssText = `
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            border-bottom: 1px solid #eee;
+            background: white;
+            transition: background 0.15s ease;
+        `;
+        
+        var checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.cssText = 'margin: 0; cursor: pointer;';
+        
+        var label = document.createElement('span');
+        label.textContent = isSelectAll ? (selectedValues.length === allValues.length ? 'Deselect All' : 'Select All') : value;
+        label.style.cssText = isSelectAll ? 'font-weight: bold; color: #b8860b;' : '';
+        
+        if (isSelectAll) {
+            checkbox.checked = selectedValues.length === allValues.length;
+        } else {
+            checkbox.checked = selectedValues.indexOf(value) !== -1;
+        }
+        
+        optionDiv.appendChild(checkbox);
+        optionDiv.appendChild(label);
+        
+        optionDiv.addEventListener('click', function(e) {
+            e.stopPropagation();
+            
+            if (isSelectAll) {
+                if (selectedValues.length === allValues.length) {
+                    selectedValues = [];
+                } else {
+                    selectedValues = [...allValues];
+                }
+                renderDropdown();
+            } else {
+                var index = selectedValues.indexOf(value);
+                if (index > -1) {
+                    selectedValues.splice(index, 1);
+                } else {
+                    selectedValues.push(value);
+                }
+                checkbox.checked = selectedValues.indexOf(value) !== -1;
+                
+                // Update select all checkbox
+                var firstCheckbox = dropdown.querySelector('input[type="checkbox"]');
+                if (firstCheckbox) {
+                    firstCheckbox.checked = selectedValues.length === allValues.length;
+                    var firstLabel = dropdown.querySelector('span');
+                    if (firstLabel) {
+                        firstLabel.textContent = selectedValues.length === allValues.length ? 'Deselect All' : 'Select All';
+                    }
+                }
+            }
+            
+            updateButtonText();
+            updateFilter();
+        });
+        
+        optionDiv.addEventListener('mouseenter', function() {
+            optionDiv.style.background = '#f5f5f5';
+        });
+        
+        optionDiv.addEventListener('mouseleave', function() {
+            optionDiv.style.background = 'white';
+        });
+        
+        return optionDiv;
+    }
+    
+    var dropdown = createDropdown();
+    
+    function renderDropdown() {
         dropdown.innerHTML = '';
         
-        // Select All / Deselect All buttons
-        var controlsDiv = document.createElement('div');
-        controlsDiv.style.cssText = 'padding: 6px 8px; border-bottom: 1px solid #ddd; display: flex; gap: 8px;';
+        // Add select all option
+        dropdown.appendChild(createOptionElement(null, true));
         
-        var selectAllBtn = document.createElement('button');
-        selectAllBtn.textContent = 'Select All';
-        selectAllBtn.style.cssText = 'flex: 1; padding: 4px; font-size: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;';
-        selectAllBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            selectedValues = [...allValues];
-            updateCheckboxes(dropdown);
-            updateButtonLabel();
-            updateFilter();
-        });
+        // Add separator
+        var separator = document.createElement('div');
+        separator.style.cssText = 'height: 1px; background: #ccc; margin: 0;';
+        dropdown.appendChild(separator);
         
-        var deselectAllBtn = document.createElement('button');
-        deselectAllBtn.textContent = 'Deselect All';
-        deselectAllBtn.style.cssText = 'flex: 1; padding: 4px; font-size: 10px; cursor: pointer; border: 1px solid #ccc; border-radius: 3px; background: #f0f0f0;';
-        deselectAllBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            selectedValues = [];
-            updateCheckboxes(dropdown);
-            updateButtonLabel();
-            updateFilter();
-        });
-        
-        controlsDiv.appendChild(selectAllBtn);
-        controlsDiv.appendChild(deselectAllBtn);
-        dropdown.appendChild(controlsDiv);
-        
-        // Individual value checkboxes
-        allValues.forEach(function(val) {
-            var item = document.createElement('div');
-            item.style.cssText = 'padding: 4px 8px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 11px;';
-            item.addEventListener('mouseenter', function() { item.style.background = '#f0f0f0'; });
-            item.addEventListener('mouseleave', function() { item.style.background = 'white'; });
-            
-            var checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = selectedValues.indexOf(val) !== -1;
-            checkbox.style.cssText = 'margin: 0; cursor: pointer;';
-            
-            var label = document.createElement('span');
-            label.textContent = val;
-            label.style.cssText = 'white-space: nowrap;';
-            
-            item.addEventListener('click', function(e) {
-                e.stopPropagation();
-                var idx = selectedValues.indexOf(val);
-                if (idx === -1) {
-                    selectedValues.push(val);
-                } else {
-                    selectedValues.splice(idx, 1);
-                }
-                checkbox.checked = selectedValues.indexOf(val) !== -1;
-                updateButtonLabel();
-                updateFilter();
-            });
-            
-            item.appendChild(checkbox);
-            item.appendChild(label);
-            dropdown.appendChild(item);
-        });
-        
-        // Reposition after content is built
-        var rect = button.getBoundingClientRect();
-        var dropdownHeight = dropdown.offsetHeight;
-        dropdown.style.top = (rect.top - dropdownHeight - 2) + 'px';
-    }
-    
-    // Update checkboxes to match selectedValues
-    function updateCheckboxes(dropdown) {
-        var checkboxes = dropdown.querySelectorAll('input[type="checkbox"]');
-        var items = Array.from(dropdown.children).slice(1); // Skip controls div
-        items.forEach(function(item, index) {
-            var checkbox = item.querySelector('input[type="checkbox"]');
-            if (checkbox && allValues[index] !== undefined) {
-                checkbox.checked = selectedValues.indexOf(allValues[index]) !== -1;
-            }
+        // Add individual options
+        allValues.forEach(function(value) {
+            dropdown.appendChild(createOptionElement(value, false));
         });
     }
     
-    // Update button label
-    function updateButtonLabel() {
-        if (selectedValues.length === 0) {
-            button.textContent = "None ▾";
-        } else if (selectedValues.length === allValues.length) {
-            button.textContent = "All ▾";
-        } else if (selectedValues.length === 1) {
-            button.textContent = selectedValues[0] + " ▾";
-        } else {
-            button.textContent = selectedValues.length + " selected ▾";
+    function showDropdown() {
+        renderDropdown();
+        
+        var buttonRect = button.getBoundingClientRect();
+        
+        // Position dropdown ABOVE the button (opens upward)
+        dropdown.style.display = 'block';
+        
+        var dropdownHeight = Math.min(300, dropdown.scrollHeight);
+        var topPosition = buttonRect.top - dropdownHeight - 2;
+        
+        // If not enough space above, position below (fallback)
+        if (topPosition < 10) {
+            topPosition = buttonRect.bottom + 2;
         }
+        
+        dropdown.style.left = buttonRect.left + 'px';
+        dropdown.style.top = topPosition + 'px';
+        dropdown.style.width = Math.max(dropdownWidth, buttonRect.width) + 'px';
+        
+        // Ensure dropdown doesn't go off screen horizontally
+        var dropdownRect = dropdown.getBoundingClientRect();
+        if (dropdownRect.right > window.innerWidth - 10) {
+            dropdown.style.left = (window.innerWidth - dropdown.offsetWidth - 10) + 'px';
+        }
+        
+        isOpen = true;
     }
     
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function(e) {
-        if (isOpen && !button.contains(e.target)) {
-            var dropdown = document.getElementById(dropdownId);
-            if (dropdown && !dropdown.contains(e.target)) {
-                isOpen = false;
-                dropdown.style.display = 'none';
-            }
+    function hideDropdown() {
+        dropdown.style.display = 'none';
+        isOpen = false;
+    }
+    
+    // Close handler for clicking outside
+    var closeHandler = function(e) {
+        if (!dropdown.contains(e.target) && !button.contains(e.target)) {
+            hideDropdown();
         }
-    });
+    };
+    
+    document.addEventListener('click', closeHandler);
     
     // Button click handler
     button.addEventListener('click', function(e) {
+        e.preventDefault();
         e.stopPropagation();
-        if (clickTimeout) clearTimeout(clickTimeout);
-        clickTimeout = setTimeout(function() {
-            toggleDropdown();
-        }, 50);
+        
+        // Close other dropdowns
+        document.querySelectorAll('[id^="dropdown_"]').forEach(function(otherDropdown) {
+            if (otherDropdown.id !== dropdownId) {
+                otherDropdown.style.display = 'none';
+            }
+        });
+        
+        if (isOpen) {
+            hideDropdown();
+        } else {
+            if (!isInitialized) {
+                loadValues();
+            }
+            showDropdown();
+        }
     });
     
-    // Initialize
-    onRendered(function() {
-        tryLoadValues();
+    // Initial load with filter state check
+    var initialLoadComplete = false;
+    
+    var tryLoad = function() {
+        loadAttempts++;
+        
+        var data = table.getData();
+        if (data && data.length > 0) {
+            loadValues();
+            if (!initialLoadComplete) {
+                initialLoadComplete = true;
+                
+                if (selectedValues.length !== allValues.length) {
+                    updateFilter();
+                }
+            }
+        } else if (loadAttempts < 5) {
+            setTimeout(tryLoad, 500);
+        }
+    };
+    
+    // Defer initial load to avoid blocking
+    requestAnimationFrame(() => {
+        tryLoad();
     });
+    
+    // Listen for table events
+    table.on("dataLoaded", function() {
+        if (!isInitialized) {
+            setTimeout(function() {
+                loadValues();
+                const existingFilter = getCurrentFilterValue();
+                if (existingFilter === null && selectedValues.length !== allValues.length) {
+                    updateFilter();
+                }
+            }, 100);
+        }
+    });
+    
+    // Listen for filter changes from other sources (like state restoration)
+    table.on("dataFiltered", function() {
+        if (isInitialized) {
+            const currentFilter = getCurrentFilterValue();
+            if (currentFilter !== null) {
+                const currentSet = new Set(currentFilter);
+                const selectedSet = new Set(selectedValues);
+                
+                if (currentSet.size !== selectedSet.size || 
+                    [...currentSet].some(v => !selectedSet.has(v))) {
+                    console.log(`External filter change detected for ${field}, syncing...`);
+                    selectedValues = currentFilter;
+                    updateButtonText();
+                }
+            }
+        }
+    });
+    
+    // Cleanup
+    var cleanup = function() {
+        var dropdown = document.getElementById(dropdownId);
+        if (dropdown) {
+            dropdown.remove();
+        }
+        document.removeEventListener('click', closeHandler);
+        if (filterTimeout) {
+            clearTimeout(filterTimeout);
+        }
+        if (clickTimeout) {
+            clearTimeout(clickTimeout);
+        }
+    };
     
     return button;
 }
