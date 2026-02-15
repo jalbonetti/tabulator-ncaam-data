@@ -28,29 +28,70 @@ function injectScrollbarFix() {
     const scrollbarStyle = document.createElement('style');
     scrollbarStyle.id = 'cbb-scrollbar-fix';
     scrollbarStyle.textContent = `
-        /* Counter Webflow's aggressive scrollbar hiding */
-        .tabulator .tabulator-tableholder::-webkit-scrollbar {
-            display: block !important;
-            width: 16px !important;
-            height: 16px !important;
+        /* =====================================================
+           SCROLLBAR FIX - Counters Webflow's aggressive hiding
+           Webflow uses: *::-webkit-scrollbar { display: none !important }
+           We counter with higher specificity + display: block
+           ===================================================== */
+        
+        /* Desktop only - show scrollbar */
+        @media screen and (min-width: 1025px) {
+            /* High specificity selector chain */
+            html body .tabulator .tabulator-tableholder::-webkit-scrollbar,
+            html body div.tabulator div.tabulator-tableholder::-webkit-scrollbar {
+                display: block !important;
+                width: 16px !important;
+                height: 16px !important;
+                visibility: visible !important;
+                -webkit-appearance: scrollbar !important;
+            }
+            
+            html body .tabulator .tabulator-tableholder::-webkit-scrollbar-track,
+            html body div.tabulator div.tabulator-tableholder::-webkit-scrollbar-track {
+                display: block !important;
+                background: #f1f1f1 !important;
+                border-radius: 8px !important;
+                visibility: visible !important;
+            }
+            
+            html body .tabulator .tabulator-tableholder::-webkit-scrollbar-thumb,
+            html body div.tabulator div.tabulator-tableholder::-webkit-scrollbar-thumb {
+                display: block !important;
+                background: #b8860b !important;
+                border-radius: 8px !important;
+                visibility: visible !important;
+                min-height: 50px !important;
+            }
+            
+            html body .tabulator .tabulator-tableholder::-webkit-scrollbar-thumb:hover,
+            html body div.tabulator div.tabulator-tableholder::-webkit-scrollbar-thumb:hover {
+                background: #996515 !important;
+            }
+            
+            /* Also set Firefox scrollbar */
+            html body .tabulator .tabulator-tableholder,
+            html body div.tabulator div.tabulator-tableholder {
+                scrollbar-width: thin !important;
+                scrollbar-color: #b8860b #f1f1f1 !important;
+            }
         }
-        .tabulator .tabulator-tableholder::-webkit-scrollbar-track {
-            background: #f1f1f1 !important;
-            display: block !important;
-        }
-        .tabulator .tabulator-tableholder::-webkit-scrollbar-thumb {
-            background: #b8860b !important;
-            border-radius: 8px !important;
-            min-height: 50px !important;
-            display: block !important;
-        }
-        .tabulator .tabulator-tableholder::-webkit-scrollbar-thumb:hover {
-            background: #996515 !important;
-        }
+        
+        /* Mobile/tablet - keep thin scrollbar */
         @media screen and (max-width: 1024px) {
-            .tabulator .tabulator-tableholder::-webkit-scrollbar {
+            html body .tabulator .tabulator-tableholder::-webkit-scrollbar,
+            html body div.tabulator div.tabulator-tableholder::-webkit-scrollbar {
+                display: block !important;
                 width: 4px !important;
                 height: 4px !important;
+                visibility: visible !important;
+            }
+            
+            html body .tabulator .tabulator-tableholder::-webkit-scrollbar-thumb,
+            html body div.tabulator div.tabulator-tableholder::-webkit-scrollbar-thumb {
+                display: block !important;
+                background: #ccc !important;
+                border-radius: 2px !important;
+                visibility: visible !important;
             }
         }
     `;
