@@ -173,7 +173,24 @@ export class CBBMatchupsTable extends BaseTable {
                 frozen: isSmallScreen,
                 widthGrow: 0,
                 minWidth: isSmallScreen ? 120 : 200,
-                sorter: "string",
+                sorter: function(a, b) {
+                    // Parse time from matchup strings like "Team A @ Team B, Feb 15, 6:00 PM EST"
+                    const parseTime = (str) => {
+                        if (!str) return 0;
+                        const match = str.match(/,\s*(\w+)\s+(\d+),\s*(\d+):(\d+)\s*(AM|PM)\s*/i);
+                        if (!match) return 0;
+                        const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+                        const mon = months[match[1]] || 0;
+                        const day = parseInt(match[2], 10);
+                        let hour = parseInt(match[3], 10);
+                        const min = parseInt(match[4], 10);
+                        const ampm = match[5].toUpperCase();
+                        if (ampm === 'PM' && hour !== 12) hour += 12;
+                        if (ampm === 'AM' && hour === 12) hour = 0;
+                        return new Date(2026, mon, day, hour, min).getTime();
+                    };
+                    return parseTime(a) - parseTime(b);
+                },
                 headerFilter: true,
                 resizable: false,
                 hozAlign: "left"
