@@ -1,10 +1,13 @@
 // tables/cbbMatchups.js - College Basketball Matchups Table
 // Simple flat table - NO expandable rows, NO subtables
 // Pulls from single Supabase table: CBBallMatchups
-// Column widths calculated from data content via scanDataForMaxWidths
+// Spread and Total are fixed-width, equal, no filters
 
 import { BaseTable } from './baseTable.js';
 import { isMobile, isTablet } from '../shared/config.js';
+
+// Fixed width for Spread and Total columns - equal, slightly wider than needed
+const SPREAD_TOTAL_WIDTH = 250;
 
 export class CBBMatchupsTable extends BaseTable {
     constructor(elementId) {
@@ -19,7 +22,6 @@ export class CBBMatchupsTable extends BaseTable {
             ...baseConfig,
             placeholder: "Loading matchups...",
             layout: "fitData",
-            
             columns: this.getColumns(isSmallScreen),
             initialSort: [
                 {column: "Matchup", dir: "asc"}
@@ -27,12 +29,8 @@ export class CBBMatchupsTable extends BaseTable {
             dataLoaded: (data) => {
                 console.log(`CBB Matchups loaded ${data.length} records`);
                 this.dataLoaded = true;
-                
                 const element = document.querySelector(this.elementId);
-                if (element) {
-                    const loadingDiv = element.querySelector('.loading-indicator');
-                    if (loadingDiv) loadingDiv.remove();
-                }
+                if (element) { const ld = element.querySelector('.loading-indicator'); if (ld) ld.remove(); }
             },
             ajaxError: (error) => {
                 console.error("Error loading CBB matchups:", error);
@@ -78,55 +76,50 @@ export class CBBMatchupsTable extends BaseTable {
         return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), wait); };
     }
 
+    // Scan data to find max width needed for Matchup column only
+    // Spread and Total use fixed widths
     scanDataForMaxWidths(data) {
         if (!data || data.length === 0 || !this.table) return;
         
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
+        // Measure header width first
         ctx.font = '600 12px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
         const HEADER_PADDING = 16;
         const SORT_ICON_WIDTH = 16;
         
-        const maxWidths = { "Matchup": 0, "Spread": 0, "Total": 0 };
-        const fieldToTitle = { "Matchup": "Matchup", "Spread": "Spread", "Total": "Total" };
+        let maxMatchupWidth = ctx.measureText("Matchup").width + HEADER_PADDING + SORT_ICON_WIDTH;
         
-        Object.keys(maxWidths).forEach(field => {
-            const title = fieldToTitle[field];
-            maxWidths[field] = ctx.measureText(title).width + HEADER_PADDING + SORT_ICON_WIDTH;
-        });
-        
+        // Measure data widths for Matchup
         ctx.font = '500 12px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
         const CELL_PADDING = 16;
         const BUFFER = 8;
         
         data.forEach(row => {
-            Object.keys(maxWidths).forEach(field => {
-                const value = row[field];
-                if (value !== null && value !== undefined && value !== '') {
-                    let displayValue = String(value);
-                    if (field === 'Spread' || field === 'Total') {
-                        const num = parseFloat(value);
-                        if (!isNaN(num)) displayValue = num.toFixed(1);
-                    }
-                    const textWidth = ctx.measureText(displayValue).width;
-                    if (textWidth > maxWidths[field]) maxWidths[field] = textWidth;
-                }
-            });
-        });
-        
-        Object.keys(maxWidths).forEach(field => {
-            if (maxWidths[field] > 0) {
-                const column = this.table.getColumn(field);
-                if (column) {
-                    const requiredWidth = maxWidths[field] + CELL_PADDING + BUFFER;
-                    const currentWidth = column.getWidth();
-                    if (requiredWidth > currentWidth) {
-                        column.setWidth(Math.ceil(requiredWidth));
-                    }
-                }
+            const value = row["Matchup"];
+            if (value !== null && value !== undefined && value !== '') {
+                const textWidth = ctx.measureText(String(value)).width;
+                if (textWidth > maxMatchupWidth) maxMatchupWidth = textWidth;
             }
         });
+        
+        // Apply width to Matchup column
+        const matchupColumn = this.table.getColumn("Matchup");
+        if (matchupColumn) {
+            const requiredWidth = maxMatchupWidth + CELL_PADDING + BUFFER;
+            const currentWidth = matchupColumn.getWidth();
+            if (requiredWidth > currentWidth) {
+                matchupColumn.setWidth(Math.ceil(requiredWidth));
+            }
+        }
+        
+        // Spread and Total are fixed width - always set them
+        const spreadColumn = this.table.getColumn("Spread");
+        if (spreadColumn) spreadColumn.setWidth(SPREAD_TOTAL_WIDTH);
+        
+        const totalColumn = this.table.getColumn("Total");
+        if (totalColumn) totalColumn.setWidth(SPREAD_TOTAL_WIDTH);
     }
 
     calculateAndApplyWidths() {
@@ -135,9 +128,7 @@ export class CBBMatchupsTable extends BaseTable {
         if (!tableElement) return;
         
         if (isMobile() || isTablet()) {
-            tableElement.style.width = '';
-            tableElement.style.minWidth = '';
-            tableElement.style.maxWidth = '';
+            tableElement.style.width = ''; tableElement.style.minWidth = ''; tableElement.style.maxWidth = '';
             const tc = tableElement.closest('.table-container');
             if (tc) { tc.style.width = ''; tc.style.minWidth = ''; tc.style.maxWidth = ''; }
             return;
@@ -175,14 +166,6 @@ export class CBBMatchupsTable extends BaseTable {
     }
 
     getColumns(isSmallScreen = false) {
-        const lineFormatter = (cell) => {
-            const value = cell.getValue();
-            if (value === null || value === undefined || value === '') return '-';
-            const num = parseFloat(value);
-            if (isNaN(num)) return '-';
-            return num.toFixed(1);
-        };
-
         return [
             {
                 title: "Matchup", 
@@ -198,18 +181,18 @@ export class CBBMatchupsTable extends BaseTable {
             {
                 title: "Spread", 
                 field: "Spread", 
+                width: SPREAD_TOTAL_WIDTH,
                 widthGrow: 0,
-                minWidth: 70,
-                sorter: "number",
+                sorter: "string",
                 resizable: false,
                 hozAlign: "center"
             },
             {
                 title: "Total", 
                 field: "Total", 
+                width: SPREAD_TOTAL_WIDTH,
                 widthGrow: 0,
-                minWidth: 70,
-                sorter: "number",
+                sorter: "string",
                 resizable: false,
                 hozAlign: "center"
             }
