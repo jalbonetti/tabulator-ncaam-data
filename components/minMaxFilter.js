@@ -1,4 +1,5 @@
 // components/minMaxFilter.js - Min/Max Range Filter for Tabulator
+// DIRECT COPY of NBA basketball version with color change (#f97316 -> #b8860b)
 // Compact dual-input filter for numeric columns (prop values, odds)
 
 export function createMinMaxFilter(cell, onRendered, success, cancel, editorParams = {}) {
@@ -43,7 +44,9 @@ export function createMinMaxFilter(cell, onRendered, success, cancel, editorPara
     let filterTimeout = null;
     
     function applyFilter() {
-        if (filterTimeout) clearTimeout(filterTimeout);
+        if (filterTimeout) {
+            clearTimeout(filterTimeout);
+        }
         
         filterTimeout = setTimeout(() => {
             const minVal = minInput.value !== '' ? parseFloat(minInput.value) : null;
@@ -70,16 +73,24 @@ export function createMinMaxFilter(cell, onRendered, success, cancel, editorPara
         if (e.key === 'Escape') { minInput.value = ''; maxInput.value = ''; success(null); }
     });
     
-    // Focus styling
-    [minInput, maxInput].forEach(input => {
-        input.addEventListener('focus', function() {
-            input.style.borderColor = '#b8860b';
-            input.style.boxShadow = '0 0 0 1px rgba(184, 134, 11, 0.2)';
-        });
-        input.addEventListener('blur', function() {
-            input.style.borderColor = '#ccc';
-            input.style.boxShadow = 'none';
-        });
+    minInput.addEventListener('focus', function() {
+        minInput.style.borderColor = '#b8860b';
+        minInput.style.boxShadow = '0 0 0 1px rgba(184, 134, 11, 0.2)';
+    });
+    
+    minInput.addEventListener('blur', function() {
+        minInput.style.borderColor = '#ccc';
+        minInput.style.boxShadow = 'none';
+    });
+    
+    maxInput.addEventListener('focus', function() {
+        maxInput.style.borderColor = '#b8860b';
+        maxInput.style.boxShadow = '0 0 0 1px rgba(184, 134, 11, 0.2)';
+    });
+    
+    maxInput.addEventListener('blur', function() {
+        maxInput.style.borderColor = '#ccc';
+        maxInput.style.boxShadow = 'none';
     });
     
     container.appendChild(minInput);
@@ -89,22 +100,42 @@ export function createMinMaxFilter(cell, onRendered, success, cancel, editorPara
 }
 
 export function minMaxFilterFunction(headerValue, rowValue, rowData, filterParams) {
-    if (!headerValue || (headerValue.min === null && headerValue.max === null)) return true;
+    if (!headerValue || (headerValue.min === null && headerValue.max === null)) {
+        return true;
+    }
     
-    if (rowValue === null || rowValue === undefined || rowValue === '' || rowValue === '-') return false;
+    let numValue;
+    
+    if (rowValue === null || rowValue === undefined || rowValue === '' || rowValue === '-') {
+        return false;
+    }
     
     const strValue = String(rowValue).trim();
-    const numValue = parseFloat(strValue);
     
-    if (isNaN(numValue)) return false;
+    if (strValue.startsWith('+') || strValue.startsWith('-')) {
+        numValue = parseFloat(strValue);
+    } else {
+        numValue = parseFloat(strValue);
+    }
+    
+    if (isNaN(numValue)) {
+        return false;
+    }
     
     const { min, max } = headerValue;
     
-    if (min !== null && max !== null) return numValue >= min && numValue <= max;
-    if (min !== null) return numValue >= min;
-    if (max !== null) return numValue <= max;
+    if (min !== null && max !== null) {
+        return numValue >= min && numValue <= max;
+    } else if (min !== null) {
+        return numValue >= min;
+    } else if (max !== null) {
+        return numValue <= max;
+    }
     
     return true;
 }
 
-export default { createMinMaxFilter, minMaxFilterFunction };
+export default {
+    createMinMaxFilter,
+    minMaxFilterFunction
+};
