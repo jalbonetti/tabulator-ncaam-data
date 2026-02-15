@@ -1,5 +1,6 @@
 // components/tabManager.js - Tab Manager for College Basketball Tables
-// Simplified: 3 tabs only (Matchups, Prop Odds, Game Odds)
+// 3 tabs: Matchups, Prop Odds, Game Odds
+// Includes applyContainerWidth and forceRecalculateWidths matching NBA pattern
 
 export const TAB_STYLES = `
     .table-wrapper {
@@ -79,7 +80,6 @@ export const TAB_STYLES = `
             padding: 8px 12px;
             font-size: 11px;
         }
-        
         .tab-buttons {
             gap: 4px;
             padding: 8px;
@@ -92,6 +92,7 @@ export class TabManager {
         this.tables = tables;
         this.currentActiveTab = 'table0';
         this.tabInitialized = {};
+        this.isTransitioning = false;
         
         Object.keys(tables).forEach(tabId => {
             this.tabInitialized[tabId] = false;
@@ -114,82 +115,129 @@ export class TabManager {
     }
 
     getContainerIdForTab(tabId) {
-        const containerMap = {
-            'table0': 'table0-container',
-            'table1': 'table1-container',
-            'table2': 'table2-container'
-        };
-        return containerMap[tabId] || `${tabId}-container`;
+        return { 'table0': 'table0-container', 'table1': 'table1-container', 'table2': 'table2-container' }[tabId] || `${tabId}-container`;
     }
 
-    setupTabSwitching() {
-        const buttons = document.querySelectorAll('.tab-button');
+    applyContainerWidth(tableContainer) {
+        if (!tableContainer) return;
         
-        buttons.forEach(button => {
-            button.addEventListener('click', () => {
-                const targetTab = button.dataset.tab;
-                if (targetTab === this.currentActiveTab) return;
-                
-                this.switchTab(targetTab);
-            });
-        });
-    }
-
-    switchTab(targetTab) {
-        console.log(`TabManager: Switching from ${this.currentActiveTab} to ${targetTab}`);
+        const tabulator = tableContainer.querySelector('.tabulator');
         
-        // Save state of current table
-        const currentTable = this.tables[this.currentActiveTab];
-        if (currentTable && currentTable.saveState) {
-            currentTable.saveState();
-        }
-        
-        // Update button styles
-        document.querySelectorAll('.tab-button').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tab === targetTab);
-        });
-        
-        // Hide current container, show target
-        const currentContainer = document.getElementById(this.getContainerIdForTab(this.currentActiveTab));
-        const targetContainer = document.getElementById(this.getContainerIdForTab(targetTab));
-        
-        if (currentContainer) {
-            currentContainer.className = 'table-container inactive-table';
-            currentContainer.style.display = 'none';
-        }
-        
-        if (targetContainer) {
-            targetContainer.className = 'table-container active-table';
-            targetContainer.style.display = 'block';
-        }
-        
-        this.currentActiveTab = targetTab;
-        
-        // Initialize tab if first time
-        if (!this.tabInitialized[targetTab]) {
-            this.initializeTab(targetTab);
+        if (window.innerWidth <= 1024) {
+            tableContainer.style.width = '100%';
+            tableContainer.style.maxWidth = '100vw';
+            tableContainer.style.overflowX = 'hidden';
+            if (tabulator) {
+                tabulator.style.width = '100%';
+                tabulator.style.minWidth = '0';
+                tabulator.style.maxWidth = '100%';
+            }
         } else {
-            // Redraw existing table
-            const table = this.tables[targetTab];
-            if (table && table.table) {
-                table.table.redraw(true);
+            tableContainer.style.width = 'fit-content';
+            tableContainer.style.maxWidth = 'none';
+            tableContainer.style.overflowX = '';
+            if (tabulator) {
+                tabulator.style.width = '';
+                tabulator.style.minWidth = '';
+                tabulator.style.maxWidth = '';
             }
         }
     }
 
-    initializeTab(tabId) {
-        const table = this.tables[tabId];
-        if (!table) {
-            console.error(`TabManager: No table found for ${tabId}`);
-            return;
-        }
+    setupTabSwitching() {
+        const self = this;
         
-        console.log(`TabManager: Initializing ${tabId}`);
+        document.addEventListener('click', async function(e) {
+            if (!e.target.classList.contains('tab-button')) return;
+            e.preventDefault();
+            
+            if (self.isTransitioning) return;
+            
+            const targetTab = e.target.getAttribute('data-tab');
+            if (targetTab === self.currentActiveTab) return;
+            
+            self.isTransitioning = true;
+            
+            try {
+                // Save current table state
+                const currentTable = self.tables[self.currentActiveTab];
+                if (currentTable && currentTable.saveState) currentTable.saveState();
+                
+                // Hide current container and reset its width styles
+                const currentContainerId = self.getContainerIdForTab(self.currentActiveTab);
+                const currentContainer = document.querySelector(`#${currentContainerId}`);
+                if (currentContainer) {
+                    currentContainer.style.display = 'none';
+                    currentContainer.classList.remove('active-table');
+                    currentContainer.classList.add('inactive-table');
+                    currentContainer.style.width = '';
+                    currentContainer.style.minWidth = '';
+                    currentContainer.style.maxWidth = '';
+                    currentContainer.style.overflowX = '';
+                    const currentTabulator = currentContainer.querySelector('.tabulator');
+                    if (currentTabulator) {
+                        currentTabulator.style.width = '';
+                        currentTabulator.style.minWidth = '';
+                        currentTabulator.style.maxWidth = '';
+                    }
+                }
+                
+                // Update active tab button
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                // Initialize target tab if needed
+                if (!self.tabInitialized[targetTab]) {
+                    self.initializeTab(targetTab);
+                }
+                
+                // Show target container
+                const targetContainerId = self.getContainerIdForTab(targetTab);
+                const targetContainer = document.querySelector(`#${targetContainerId}`);
+                if (targetContainer) {
+                    targetContainer.style.display = 'block';
+                    targetContainer.classList.add('active-table');
+                    targetContainer.classList.remove('inactive-table');
+                }
+                
+                self.currentActiveTab = targetTab;
+                
+                await new Promise(resolve => setTimeout(resolve, 50));
+                
+                // Redraw and recalculate widths
+                const targetTableWrapper = self.tables[targetTab];
+                if (targetTableWrapper && targetTableWrapper.table) {
+                    targetTableWrapper.table.redraw(true);
+                    
+                    setTimeout(() => {
+                        if (window.innerWidth > 1024) {
+                            if (targetTableWrapper.equalizeClusteredColumns) targetTableWrapper.equalizeClusteredColumns();
+                            if (targetTableWrapper.forceRecalculateWidths) targetTableWrapper.forceRecalculateWidths();
+                            else if (targetTableWrapper.calculateAndApplyWidths) targetTableWrapper.calculateAndApplyWidths();
+                        }
+                        
+                        const tableContainer = targetTableWrapper.table?.element?.closest('.table-container');
+                        requestAnimationFrame(() => self.applyContainerWidth(tableContainer));
+                    }, 100);
+                }
+            } catch (error) {
+                console.error("TabManager: Error during tab switch:", error);
+            } finally {
+                self.isTransitioning = false;
+            }
+        });
+    }
+
+    initializeTab(tabId) {
+        if (this.tabInitialized[tabId]) return;
+        
+        const table = this.tables[tabId];
+        if (!table) return;
         
         try {
             table.initialize();
             this.tabInitialized[tabId] = true;
-            console.log(`TabManager: ${tabId} initialized successfully`);
+            console.log(`TabManager: ${tabId} initialized`);
         } catch (error) {
             console.error(`TabManager: Error initializing ${tabId}:`, error);
         }
