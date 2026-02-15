@@ -127,19 +127,37 @@ export class CBBMatchupsTable extends BaseTable {
         const tableElement = this.table.element;
         if (!tableElement) return;
         
-        if (isMobile() || isTablet()) {
-            tableElement.style.width = ''; tableElement.style.minWidth = ''; tableElement.style.maxWidth = '';
-            const tc = tableElement.closest('.table-container');
-            if (tc) { tc.style.width = ''; tc.style.minWidth = ''; tc.style.maxWidth = ''; }
-            return;
-        }
-        
         try {
-            const tableHolder = tableElement.querySelector('.tabulator-tableholder');
-            if (tableHolder) tableHolder.style.overflowY = 'scroll';
-            
             let totalColumnWidth = 0;
             this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
+            
+            if (isMobile() || isTablet()) {
+                // Mobile/tablet: constrain to exact content width so no grey overflow
+                const totalWidth = totalColumnWidth + 2; // minimal border buffer
+                
+                tableElement.style.width = totalWidth + 'px';
+                tableElement.style.minWidth = '0';
+                tableElement.style.maxWidth = totalWidth + 'px';
+                
+                const tableHolder = tableElement.querySelector('.tabulator-tableholder');
+                if (tableHolder) {
+                    tableHolder.style.overflowY = 'auto';
+                    tableHolder.style.overflowX = 'auto';
+                }
+                
+                const tc = tableElement.closest('.table-container');
+                if (tc) {
+                    tc.style.width = totalWidth + 'px';
+                    tc.style.minWidth = '0';
+                    tc.style.maxWidth = '100vw';
+                    tc.style.overflowX = 'auto';
+                }
+                return;
+            }
+            
+            // Desktop: precise width with scrollbar, grey void fills remaining wrapper space
+            const tableHolder = tableElement.querySelector('.tabulator-tableholder');
+            if (tableHolder) tableHolder.style.overflowY = 'scroll';
             
             const SCROLLBAR_WIDTH = 17;
             const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
