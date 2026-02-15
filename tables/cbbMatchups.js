@@ -2,6 +2,8 @@
 // Simple flat table - NO expandable rows, NO subtables
 // Pulls from single Supabase table: CBBallMatchups
 // Spread and Total are fixed-width, equal, no filters
+// FIXED: Container now constrains to column widths on both desktop and mobile
+// FIXED: Scrollbar uses overflow-y auto instead of scroll (only shows when needed)
 
 import { BaseTable } from './baseTable.js';
 import { isMobile, isTablet } from '../shared/config.js';
@@ -65,9 +67,8 @@ export class CBBMatchupsTable extends BaseTable {
         });
         
         this.table.on("renderComplete", () => {
-            if (!isMobile() && !isTablet()) {
-                setTimeout(() => this.calculateAndApplyWidths(), 100);
-            }
+            // Run on ALL devices to ensure container is properly constrained
+            setTimeout(() => this.calculateAndApplyWidths(), 100);
         });
     }
 
@@ -127,34 +128,55 @@ export class CBBMatchupsTable extends BaseTable {
         const tableElement = this.table.element;
         if (!tableElement) return;
         
-        if (isMobile() || isTablet()) {
-            tableElement.style.width = ''; tableElement.style.minWidth = ''; tableElement.style.maxWidth = '';
-            const tc = tableElement.closest('.table-container');
-            if (tc) { tc.style.width = ''; tc.style.minWidth = ''; tc.style.maxWidth = ''; }
-            return;
-        }
+        const isSmallScreen = isMobile() || isTablet();
         
         try {
             const tableHolder = tableElement.querySelector('.tabulator-tableholder');
-            if (tableHolder) tableHolder.style.overflowY = 'scroll';
             
+            // Get total column width
             let totalColumnWidth = 0;
             this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
             
-            const SCROLLBAR_WIDTH = 17;
-            const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
-            
-            tableElement.style.width = totalWidth + 'px';
-            tableElement.style.minWidth = totalWidth + 'px';
-            tableElement.style.maxWidth = totalWidth + 'px';
-            
-            if (tableHolder) { tableHolder.style.width = totalWidth + 'px'; tableHolder.style.maxWidth = totalWidth + 'px'; }
-            
-            const header = tableElement.querySelector('.tabulator-header');
-            if (header) header.style.width = totalWidth + 'px';
-            
-            const tc = tableElement.closest('.table-container');
-            if (tc) { tc.style.width = 'fit-content'; tc.style.minWidth = 'auto'; tc.style.maxWidth = 'none'; }
+            if (isSmallScreen) {
+                // MOBILE/TABLET: Constrain container to exactly the column widths
+                // No scrollbar reservation needed - content won't overflow horizontally
+                const totalWidth = totalColumnWidth;
+                
+                tableElement.style.width = totalWidth + 'px';
+                tableElement.style.minWidth = totalWidth + 'px';
+                tableElement.style.maxWidth = totalWidth + 'px';
+                
+                if (tableHolder) {
+                    tableHolder.style.overflowY = 'auto';
+                    tableHolder.style.width = totalWidth + 'px';
+                    tableHolder.style.maxWidth = totalWidth + 'px';
+                }
+                
+                const header = tableElement.querySelector('.tabulator-header');
+                if (header) header.style.width = totalWidth + 'px';
+                
+                const tc = tableElement.closest('.table-container');
+                if (tc) { tc.style.width = 'fit-content'; tc.style.minWidth = 'auto'; tc.style.maxWidth = 'none'; }
+            } else {
+                // DESKTOP: Use auto overflow so scrollbar only appears when needed
+                if (tableHolder) tableHolder.style.overflowY = 'auto';
+                
+                // Reserve scrollbar space so layout doesn't shift when scrollbar appears
+                const SCROLLBAR_WIDTH = 17;
+                const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
+                
+                tableElement.style.width = totalWidth + 'px';
+                tableElement.style.minWidth = totalWidth + 'px';
+                tableElement.style.maxWidth = totalWidth + 'px';
+                
+                if (tableHolder) { tableHolder.style.width = totalWidth + 'px'; tableHolder.style.maxWidth = totalWidth + 'px'; }
+                
+                const header = tableElement.querySelector('.tabulator-header');
+                if (header) header.style.width = totalWidth + 'px';
+                
+                const tc = tableElement.closest('.table-container');
+                if (tc) { tc.style.width = 'fit-content'; tc.style.minWidth = 'auto'; tc.style.maxWidth = 'none'; }
+            }
         } catch (error) {
             console.error('CBB Matchups calculateAndApplyWidths error:', error);
         }
