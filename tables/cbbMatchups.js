@@ -127,11 +127,12 @@ export class CBBMatchupsTable extends BaseTable {
         const tableElement = this.table.element;
         if (!tableElement) return;
         
+        // Calculate total column width (used for both mobile and desktop)
+        let totalColumnWidth = 0;
+        this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
+        
         if (isMobile() || isTablet()) {
             // Mobile: set tabulator width to exact sum of columns so no grey overflow
-            let totalColumnWidth = 0;
-            this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
-            
             if (totalColumnWidth > 0) {
                 const totalWidth = totalColumnWidth + 2;
                 tableElement.style.width = totalWidth + 'px';
@@ -139,7 +140,6 @@ export class CBBMatchupsTable extends BaseTable {
                 tableElement.style.maxWidth = totalWidth + 'px';
             }
             
-            // Container stays at 100vw with overflow handling from CSS
             const tc = tableElement.closest('.table-container');
             if (tc) { tc.style.width = ''; tc.style.minWidth = ''; tc.style.maxWidth = ''; }
             return;
@@ -147,13 +147,18 @@ export class CBBMatchupsTable extends BaseTable {
         
         try {
             const tableHolder = tableElement.querySelector('.tabulator-tableholder');
-            if (tableHolder) tableHolder.style.overflowY = 'scroll';
             
-            let totalColumnWidth = 0;
-            this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
+            // Use auto overflow - only show scrollbar when content exceeds height
+            if (tableHolder) tableHolder.style.overflowY = 'auto';
             
-            const SCROLLBAR_WIDTH = 17;
-            const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
+            // Only add scrollbar width if content actually overflows
+            let scrollbarWidth = 0;
+            if (tableHolder) {
+                const contentOverflows = tableHolder.scrollHeight > tableHolder.clientHeight;
+                if (contentOverflows) scrollbarWidth = 17;
+            }
+            
+            const totalWidth = totalColumnWidth + scrollbarWidth;
             
             tableElement.style.width = totalWidth + 'px';
             tableElement.style.minWidth = totalWidth + 'px';
