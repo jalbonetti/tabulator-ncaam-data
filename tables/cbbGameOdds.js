@@ -339,7 +339,8 @@ export class CBBGameOddsTable extends BaseTable {
                 resizable: false, formatter: kellyFormatter, hozAlign: "center", cssClass: "cluster-ev-kelly"
             },
             {
-                title: "Link", field: "Link", widthGrow: 0, minWidth: 40,
+                title: "Link", field: "Link", width: 50, widthGrow: 0,
+                minWidth: 40, maxWidth: 50,
                 sorter: "string", resizable: false, hozAlign: "center",
                 formatter: linkFormatter, headerSort: false
             }
