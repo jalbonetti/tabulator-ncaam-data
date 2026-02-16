@@ -1,6 +1,9 @@
 // components/tabManager.js - Tab Manager for College Basketball Tables
 // 3 tabs: Matchups, Prop Odds, Game Odds
 // Includes applyContainerWidth and forceRecalculateWidths matching NBA pattern
+// FIXED: After applyContainerWidth, call forceRecalculateWidths so narrow tables
+//        (like Matchups) can re-constrain their container width
+// FIXED: Run width recalculation on ALL devices, not just desktop
 
 export const TAB_STYLES = `
     .table-wrapper {
@@ -210,14 +213,29 @@ export class TabManager {
                     targetTableWrapper.table.redraw(true);
                     
                     setTimeout(() => {
+                        // FIXED: Run width recalculation on ALL devices, not just desktop
+                        // Desktop-specific: equalize clustered columns
                         if (window.innerWidth > 1024) {
                             if (targetTableWrapper.equalizeClusteredColumns) targetTableWrapper.equalizeClusteredColumns();
-                            if (targetTableWrapper.forceRecalculateWidths) targetTableWrapper.forceRecalculateWidths();
-                            else if (targetTableWrapper.calculateAndApplyWidths) targetTableWrapper.calculateAndApplyWidths();
                         }
                         
+                        // Apply container width defaults first
                         const tableContainer = targetTableWrapper.table?.element?.closest('.table-container');
-                        requestAnimationFrame(() => self.applyContainerWidth(tableContainer));
+                        requestAnimationFrame(() => {
+                            self.applyContainerWidth(tableContainer);
+                            
+                            // FIXED: After applyContainerWidth sets its defaults (100% on mobile, 
+                            // fit-content on desktop), let the table override with its own calculated 
+                            // widths. This is critical for narrow tables like Matchups that need to 
+                            // constrain their container to column widths rather than filling viewport.
+                            requestAnimationFrame(() => {
+                                if (targetTableWrapper.forceRecalculateWidths) {
+                                    targetTableWrapper.forceRecalculateWidths();
+                                } else if (targetTableWrapper.calculateAndApplyWidths) {
+                                    targetTableWrapper.calculateAndApplyWidths();
+                                }
+                            });
+                        });
                     }, 100);
                 }
             } catch (error) {
@@ -238,6 +256,22 @@ export class TabManager {
             table.initialize();
             this.tabInitialized[tabId] = true;
             console.log(`TabManager: ${tabId} initialized`);
+            
+            // FIXED: After initialization, apply container width then let table recalculate
+            const self = this;
+            setTimeout(() => {
+                const tableContainer = table.table?.element?.closest('.table-container');
+                self.applyContainerWidth(tableContainer);
+                
+                // Let the table override with its own widths after applyContainerWidth
+                requestAnimationFrame(() => {
+                    if (table.forceRecalculateWidths) {
+                        table.forceRecalculateWidths();
+                    } else if (table.calculateAndApplyWidths) {
+                        table.calculateAndApplyWidths();
+                    }
+                });
+            }, 200);
         } catch (error) {
             console.error(`TabManager: Error initializing ${tabId}:`, error);
         }
