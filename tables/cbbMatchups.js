@@ -7,8 +7,10 @@
 //   .tabulator { width: 100% !important; }
 //   .tabulator .tabulator-tableholder { overflow-y: scroll !important; }  (desktop)
 //   .table-container .tabulator { width: 100% !important; max-width: 100% !important; }  (mobile)
-// These are needed for wide tables (Prop Odds, Game Odds) but wrong for the narrow
-// Matchups table. We inject higher-specificity CSS using the container ID to override.
+// 
+// On DESKTOP: We override these via #table0-container so JS can set tight pixel widths.
+// On MOBILE: We leave the tabulator width rules alone (they're needed for horizontal scroll).
+//   Instead we constrain only the container to viewport width so there's no extra space.
 
 import { BaseTable } from './baseTable.js';
 import { isMobile, isTablet } from '../shared/config.js';
@@ -22,9 +24,6 @@ export class CBBMatchupsTable extends BaseTable {
         this._stylesInjected = false;
     }
 
-    // Inject high-specificity CSS overrides for the Matchups table container.
-    // Uses #table0-container (the parent div ID from main.js) to beat the 
-    // class-based .tabulator rules in tableStyles.js even with !important.
     _injectMatchupsStyles() {
         if (this._stylesInjected) return;
         const styleId = 'cbb-matchups-width-override';
@@ -33,21 +32,11 @@ export class CBBMatchupsTable extends BaseTable {
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
-            /* Override the blanket width:100%!important and overflow-y:scroll!important 
-               rules from tableStyles.js for the Matchups table only.
-               #table0-container .tabulator has higher specificity than .tabulator alone. */
-            
-            /* ALL DEVICES: Let JS control the width via inline styles */
-            #table0-container .tabulator {
-                width: auto !important;
-                max-width: none !important;
-            }
-            
-            #table0-container .tabulator .tabulator-tableholder {
-                overflow-y: auto !important;
-            }
-            
-            /* DESKTOP: Override the desktop block that forces width:100% and scroll */
+            /* =====================================================
+               DESKTOP ONLY: Override blanket width:100% and overflow-y:scroll
+               so JS can set tight pixel widths on the Matchups table.
+               #table0-container has higher specificity than bare .tabulator.
+               ===================================================== */
             @media screen and (min-width: 1025px) {
                 #table0-container .tabulator {
                     width: auto !important;
@@ -58,14 +47,16 @@ export class CBBMatchupsTable extends BaseTable {
                 }
             }
             
-            /* MOBILE/TABLET: Override width only - do NOT touch overflow-x 
-               because the frozen-column system needs overflow-x:hidden on the 
-               container so that tabulator-tableholder becomes the scroll target */
+            /* =====================================================
+               MOBILE/TABLET: Do NOT override tabulator width rules.
+               The tabulator needs width:100% so it stays viewport-sized
+               and the tableholder scrolls horizontally.
+               We ONLY constrain the container so no extra white space appears.
+               ===================================================== */
             @media screen and (max-width: 1024px) {
-                #table0-container .tabulator {
-                    width: auto !important;
-                    min-width: auto !important;
-                    max-width: none !important;
+                #table0-container {
+                    width: 100vw !important;
+                    max-width: 100vw !important;
                 }
             }
         `;
@@ -75,7 +66,6 @@ export class CBBMatchupsTable extends BaseTable {
     }
 
     initialize() {
-        // Inject override styles BEFORE table creation
         this._injectMatchupsStyles();
         
         const isSmallScreen = isMobile() || isTablet();
@@ -127,9 +117,11 @@ export class CBBMatchupsTable extends BaseTable {
             }, 100);
         });
         
-        // Run on ALL devices
         this.table.on("renderComplete", () => {
-            setTimeout(() => this.calculateAndApplyWidths(), 100);
+            // Desktop only - mobile doesn't need JS width management
+            if (!isMobile() && !isTablet()) {
+                setTimeout(() => this.calculateAndApplyWidths(), 100);
+            }
         });
     }
 
@@ -178,24 +170,44 @@ export class CBBMatchupsTable extends BaseTable {
         if (totalColumn) totalColumn.setWidth(SPREAD_TOTAL_WIDTH);
     }
 
+    // Desktop only: constrain container to column widths + scrollbar
+    // Mobile is handled purely by CSS (100vw container, 100% tabulator, tableholder scrolls)
     calculateAndApplyWidths() {
         if (!this.table) return;
         const tableElement = this.table.element;
         if (!tableElement) return;
         
-        const isSmallScreen = isMobile() || isTablet();
+        // Mobile: clear any JS-set widths and let CSS handle it
+        if (isMobile() || isTablet()) {
+            tableElement.style.width = '';
+            tableElement.style.minWidth = '';
+            tableElement.style.maxWidth = '';
+            const tableHolder = tableElement.querySelector('.tabulator-tableholder');
+            if (tableHolder) {
+                tableHolder.style.width = '';
+                tableHolder.style.maxWidth = '';
+            }
+            const header = tableElement.querySelector('.tabulator-header');
+            if (header) header.style.width = '';
+            const tc = tableElement.closest('.table-container');
+            if (tc) {
+                tc.style.width = '';
+                tc.style.minWidth = '';
+                tc.style.maxWidth = '';
+            }
+            return;
+        }
         
+        // Desktop: set tight pixel widths
         try {
             const tableHolder = tableElement.querySelector('.tabulator-tableholder');
             
             let totalColumnWidth = 0;
             this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
             
-            const SCROLLBAR_WIDTH = isSmallScreen ? 0 : 17;
+            const SCROLLBAR_WIDTH = 17;
             const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
             
-            // Set inline styles - these now work because the CSS overrides removed the 
-            // blanket !important width:100% rules for #table0-container
             tableElement.style.width = totalWidth + 'px';
             tableElement.style.minWidth = totalWidth + 'px';
             tableElement.style.maxWidth = totalWidth + 'px';
@@ -210,21 +222,12 @@ export class CBBMatchupsTable extends BaseTable {
             
             const tc = tableElement.closest('.table-container');
             if (tc) { 
-                if (isSmallScreen) {
-                    // Mobile: constrain width but keep overflow-x hidden for frozen columns
-                    tc.style.width = totalWidth + 'px';
-                    tc.style.maxWidth = totalWidth + 'px';
-                    tc.style.overflowX = 'hidden';
-                } else {
-                    // Desktop: fit-content with grey void filling the rest
-                    tc.style.width = 'fit-content'; 
-                    tc.style.minWidth = 'auto'; 
-                    tc.style.maxWidth = 'none';
-                    tc.style.overflowX = '';
-                }
+                tc.style.width = 'fit-content'; 
+                tc.style.minWidth = 'auto'; 
+                tc.style.maxWidth = 'none';
             }
             
-            console.log(`CBB Matchups: Set width to ${totalWidth}px (columns: ${totalColumnWidth}px + scrollbar: ${SCROLLBAR_WIDTH}px, device: ${isSmallScreen ? 'mobile' : 'desktop'})`);
+            console.log(`CBB Matchups: Desktop width set to ${totalWidth}px (columns: ${totalColumnWidth}px + scrollbar: ${SCROLLBAR_WIDTH}px)`);
         } catch (error) {
             console.error('CBB Matchups calculateAndApplyWidths error:', error);
         }
