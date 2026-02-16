@@ -58,13 +58,10 @@ export class CBBMatchupsTable extends BaseTable {
                 }
             }
             
-            /* MOBILE/TABLET: Override the mobile block that forces width:100% */
+            /* MOBILE/TABLET: Override width only - do NOT touch overflow-x 
+               because the frozen-column system needs overflow-x:hidden on the 
+               container so that tabulator-tableholder becomes the scroll target */
             @media screen and (max-width: 1024px) {
-                #table0-container {
-                    width: auto !important;
-                    max-width: none !important;
-                    overflow-x: visible !important;
-                }
                 #table0-container .tabulator {
                     width: auto !important;
                     min-width: auto !important;
@@ -213,10 +210,18 @@ export class CBBMatchupsTable extends BaseTable {
             
             const tc = tableElement.closest('.table-container');
             if (tc) { 
-                tc.style.width = 'fit-content'; 
-                tc.style.minWidth = 'auto'; 
-                tc.style.maxWidth = 'none';
-                tc.style.overflowX = 'visible';
+                if (isSmallScreen) {
+                    // Mobile: constrain width but keep overflow-x hidden for frozen columns
+                    tc.style.width = totalWidth + 'px';
+                    tc.style.maxWidth = totalWidth + 'px';
+                    tc.style.overflowX = 'hidden';
+                } else {
+                    // Desktop: fit-content with grey void filling the rest
+                    tc.style.width = 'fit-content'; 
+                    tc.style.minWidth = 'auto'; 
+                    tc.style.maxWidth = 'none';
+                    tc.style.overflowX = '';
+                }
             }
             
             console.log(`CBB Matchups: Set width to ${totalWidth}px (columns: ${totalColumnWidth}px + scrollbar: ${SCROLLBAR_WIDTH}px, device: ${isSmallScreen ? 'mobile' : 'desktop'})`);
