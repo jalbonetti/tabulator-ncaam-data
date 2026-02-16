@@ -2,9 +2,13 @@
 // Simple flat table - NO expandable rows, NO subtables
 // Pulls from single Supabase table: CBBallMatchups
 // Spread and Total are fixed-width, equal, no filters
-// FIXED: Container now tightly constrains to column widths on ALL devices
-// FIXED: Scrollbar uses overflow-y auto instead of scroll (only shows when needed)
-// FIXED: Overrides TabManager's applyContainerWidth which sets mobile to 100%
+//
+// FIXED: The blanket CSS rules in tableStyles.js use !important to set:
+//   .tabulator { width: 100% !important; }
+//   .tabulator .tabulator-tableholder { overflow-y: scroll !important; }  (desktop)
+//   .table-container .tabulator { width: 100% !important; max-width: 100% !important; }  (mobile)
+// These are needed for wide tables (Prop Odds, Game Odds) but wrong for the narrow
+// Matchups table. We inject higher-specificity CSS using the container ID to override.
 
 import { BaseTable } from './baseTable.js';
 import { isMobile, isTablet } from '../shared/config.js';
@@ -15,9 +19,68 @@ const SPREAD_TOTAL_WIDTH = 250;
 export class CBBMatchupsTable extends BaseTable {
     constructor(elementId) {
         super(elementId, 'CBBallMatchups');
+        this._stylesInjected = false;
+    }
+
+    // Inject high-specificity CSS overrides for the Matchups table container.
+    // Uses #table0-container (the parent div ID from main.js) to beat the 
+    // class-based .tabulator rules in tableStyles.js even with !important.
+    _injectMatchupsStyles() {
+        if (this._stylesInjected) return;
+        const styleId = 'cbb-matchups-width-override';
+        if (document.querySelector(`#${styleId}`)) { this._stylesInjected = true; return; }
+        
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            /* Override the blanket width:100%!important and overflow-y:scroll!important 
+               rules from tableStyles.js for the Matchups table only.
+               #table0-container .tabulator has higher specificity than .tabulator alone. */
+            
+            /* ALL DEVICES: Let JS control the width via inline styles */
+            #table0-container .tabulator {
+                width: auto !important;
+                max-width: none !important;
+            }
+            
+            #table0-container .tabulator .tabulator-tableholder {
+                overflow-y: auto !important;
+            }
+            
+            /* DESKTOP: Override the desktop block that forces width:100% and scroll */
+            @media screen and (min-width: 1025px) {
+                #table0-container .tabulator {
+                    width: auto !important;
+                    max-width: none !important;
+                }
+                #table0-container .tabulator .tabulator-tableholder {
+                    overflow-y: auto !important;
+                }
+            }
+            
+            /* MOBILE/TABLET: Override the mobile block that forces width:100% */
+            @media screen and (max-width: 1024px) {
+                #table0-container {
+                    width: auto !important;
+                    max-width: none !important;
+                    overflow-x: visible !important;
+                }
+                #table0-container .tabulator {
+                    width: auto !important;
+                    min-width: auto !important;
+                    max-width: none !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        this._stylesInjected = true;
+        console.log('CBB Matchups: Injected width override styles');
     }
 
     initialize() {
+        // Inject override styles BEFORE table creation
+        this._injectMatchupsStyles();
+        
         const isSmallScreen = isMobile() || isTablet();
         const baseConfig = this.getBaseConfig();
         
@@ -67,8 +130,7 @@ export class CBBMatchupsTable extends BaseTable {
             }, 100);
         });
         
-        // FIXED: Run on ALL devices, not just desktop
-        // This ensures mobile/tablet container is constrained after TabManager sets it to 100%
+        // Run on ALL devices
         this.table.on("renderComplete", () => {
             setTimeout(() => this.calculateAndApplyWidths(), 100);
         });
@@ -79,22 +141,18 @@ export class CBBMatchupsTable extends BaseTable {
         return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), wait); };
     }
 
-    // Scan data to find max width needed for Matchup column only
-    // Spread and Total use fixed widths
     scanDataForMaxWidths(data) {
         if (!data || data.length === 0 || !this.table) return;
         
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // Measure header width first
         ctx.font = '600 12px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
         const HEADER_PADDING = 16;
         const SORT_ICON_WIDTH = 16;
         
         let maxMatchupWidth = ctx.measureText("Matchup").width + HEADER_PADDING + SORT_ICON_WIDTH;
         
-        // Measure data widths for Matchup
         ctx.font = '500 12px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
         const CELL_PADDING = 16;
         const BUFFER = 8;
@@ -107,7 +165,6 @@ export class CBBMatchupsTable extends BaseTable {
             }
         });
         
-        // Apply width to Matchup column
         const matchupColumn = this.table.getColumn("Matchup");
         if (matchupColumn) {
             const requiredWidth = maxMatchupWidth + CELL_PADDING + BUFFER;
@@ -117,7 +174,6 @@ export class CBBMatchupsTable extends BaseTable {
             }
         }
         
-        // Spread and Total are fixed width - always set them
         const spreadColumn = this.table.getColumn("Spread");
         if (spreadColumn) spreadColumn.setWidth(SPREAD_TOTAL_WIDTH);
         
@@ -125,16 +181,6 @@ export class CBBMatchupsTable extends BaseTable {
         if (totalColumn) totalColumn.setWidth(SPREAD_TOTAL_WIDTH);
     }
 
-    // FIXED: Apply tight container width on ALL devices
-    // 
-    // Problem: TabManager.applyContainerWidth() sets mobile containers to width:100% / maxWidth:100vw
-    // and the tabulator to width:100% / maxWidth:100%. This is correct for wide tables (Prop Odds, 
-    // Game Odds) that need the full viewport for frozen-column horizontal scrolling. But for the 
-    // Matchups table with only 3 narrow columns, it creates a huge empty space to the right.
-    //
-    // Solution: This method explicitly sets pixel widths on the tabulator element, tableholder, 
-    // header, AND the table-container - overriding whatever TabManager set. On desktop we reserve
-    // 17px for the scrollbar track; on mobile we don't.
     calculateAndApplyWidths() {
         if (!this.table) return;
         const tableElement = this.table.element;
@@ -145,18 +191,14 @@ export class CBBMatchupsTable extends BaseTable {
         try {
             const tableHolder = tableElement.querySelector('.tabulator-tableholder');
             
-            // Get total column width
             let totalColumnWidth = 0;
             this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
             
-            // Desktop: add scrollbar reservation; Mobile: just use column width
             const SCROLLBAR_WIDTH = isSmallScreen ? 0 : 17;
             const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
             
-            // Use auto so scrollbar only appears when rows overflow the 600px height
-            if (tableHolder) tableHolder.style.overflowY = 'auto';
-            
-            // Constrain the tabulator element itself with explicit pixel values
+            // Set inline styles - these now work because the CSS overrides removed the 
+            // blanket !important width:100% rules for #table0-container
             tableElement.style.width = totalWidth + 'px';
             tableElement.style.minWidth = totalWidth + 'px';
             tableElement.style.maxWidth = totalWidth + 'px';
@@ -169,7 +211,6 @@ export class CBBMatchupsTable extends BaseTable {
             const header = tableElement.querySelector('.tabulator-header');
             if (header) header.style.width = totalWidth + 'px';
             
-            // Constrain the table-container parent - use fit-content so it wraps the tabulator
             const tc = tableElement.closest('.table-container');
             if (tc) { 
                 tc.style.width = 'fit-content'; 
@@ -184,14 +225,12 @@ export class CBBMatchupsTable extends BaseTable {
         }
     }
 
-    // Called by TabManager on tab switch
     forceRecalculateWidths() {
         const data = this.table ? this.table.getData() : [];
         if (data.length > 0) { this.scanDataForMaxWidths(data); }
         this.calculateAndApplyWidths();
     }
     
-    // Alias for TabManager compatibility
     expandNameColumnToFill() {
         this.calculateAndApplyWidths();
     }
