@@ -3,18 +3,24 @@
 // Pulls from single Supabase table: CBBallMatchups
 // Spread and Total are fixed-width, equal, no filters
 //
-// WIDTH FIX:
-// The problem: Multiple layers fight over container/tabulator width on mobile:
-//   1. tableStyles.js CSS: .table-container { width: 100% !important; } 
-//   2. TabManager.applyContainerWidth(): sets inline width:100%, overflow-x:hidden
-//   3. tableStyles.js CSS: .tabulator { width: 100% !important; }
-// All of these expand the container to full page width, creating void space
-// past the narrow 3-column Matchups table.
+// WIDTH FIX STRATEGY:
 //
-// The fix: Inject CSS using #table0-container (ID selector + !important) which
-// beats both the class-based CSS !important rules AND the TabManager inline styles.
-// On mobile, we use fit-content + overflow-x:auto on the container itself,
-// since Matchups has NO frozen columns and doesn't need the hidden/tableholder pattern.
+// DESKTOP: 
+//   CSS: #table0-container .tabulator { width: auto !important } — overrides the
+//        blanket .tabulator { width: 100% !important } from tableStyles.js
+//   JS:  Sets exact pixel widths on tabulator (columns + 17px scrollbar)
+//   CSS: #table0-container { fit-content } — container wraps to tabulator
+//   Result: Tight container, no void, scrollbar only when rows overflow
+//
+// MOBILE:
+//   CSS: #table0-container { max-width: 100vw, overflow-x: auto } — container is 
+//        capped to screen width and scrolls horizontally
+//   CSS: Does NOT override .tabulator width — we NEED the tabulator to be wider
+//        than the container so there's content to scroll. JS sets inline pixel 
+//        widths (e.g. 850px) which override the CSS width:100% (inline > stylesheet
+//        when stylesheet doesn't use !important... but tableStyles DOES use !important).
+//        So we need a targeted !important to set min-width on the tabulator.
+//   Result: Container = screen width, tabulator = content width, horizontal scroll works
 
 import { BaseTable } from './baseTable.js';
 import { isMobile, isTablet } from '../shared/config.js';
@@ -34,62 +40,59 @@ export class CBBMatchupsTable extends BaseTable {
         
         const style = document.createElement('style');
         style.id = styleId;
-        // ID selector (#table0-container) + !important beats:
-        //   - Class selectors with !important (.table-container, .tabulator)  
-        //   - Inline styles from TabManager (no !important on those)
         style.textContent = `
             /* =====================================================
-               ALL DEVICES: Core overrides for Matchups table.
-               Container wraps to content width and scrolls if needed.
-               ===================================================== */
-            #table0-container {
-                width: fit-content !important;
-                max-width: 100vw !important;
-                overflow-x: auto !important;
-                -webkit-overflow-scrolling: touch !important;
-            }
-            
-            #table0-container .tabulator {
-                width: auto !important;
-                max-width: none !important;
-            }
-            
-            #table0-container .tabulator .tabulator-tableholder {
-                overflow-y: auto !important;
-            }
-            
-            /* =====================================================
-               DESKTOP (>1024px): No horizontal scroll needed, 
-               container fits content exactly
+               DESKTOP (>1024px): Override blanket rules so JS can
+               set tight pixel widths. Container wraps to content.
                ===================================================== */
             @media screen and (min-width: 1025px) {
                 #table0-container {
-                    overflow-x: visible !important;
-                }
-            }
-            
-            /* =====================================================
-               MOBILE/TABLET (<=1024px): Container is scroll target.
-               No frozen columns in Matchups = no need for the 
-               overflow-x:hidden + tableholder-scrolls pattern.
-               ===================================================== */
-            @media screen and (max-width: 1024px) {
-                #table0-container {
                     width: fit-content !important;
-                    min-width: 0 !important;
-                    max-width: 100vw !important;
-                    overflow-x: auto !important;
-                    -webkit-overflow-scrolling: touch !important;
+                    max-width: none !important;
+                    overflow-x: visible !important;
                 }
                 
                 #table0-container .tabulator {
                     width: auto !important;
-                    min-width: 0 !important;
                     max-width: none !important;
                 }
                 
                 #table0-container .tabulator .tabulator-tableholder {
+                    overflow-y: auto !important;
+                }
+            }
+            
+            /* =====================================================
+               MOBILE/TABLET (<=1024px): 
+               - Container: capped to viewport, scrolls horizontally
+               - Tabulator: must NOT be constrained to container width.
+                 We remove the max-width:100% that tableStyles.js sets,
+                 so the tabulator can be wider than the container.
+                 JS inline styles set the actual pixel width.
+               ===================================================== */
+            @media screen and (max-width: 1024px) {
+                #table0-container {
+                    max-width: 100vw !important;
+                    overflow-x: auto !important;
+                    overflow-y: visible !important;
+                    -webkit-overflow-scrolling: touch !important;
+                }
+                
+                /* Remove the max-width:100% constraint so tabulator can 
+                   overflow the container. Keep width:100% — JS inline 
+                   style (e.g. width:850px) will override it since inline 
+                   beats stylesheet... EXCEPT tableStyles uses !important.
+                   So we also need to remove that constraint: */
+                #table0-container .tabulator {
+                    max-width: none !important;
+                    min-width: 0 !important;
+                }
+                
+                /* The tableholder doesn't need to be the scroll target 
+                   since there are no frozen columns. Let it size naturally. */
+                #table0-container .tabulator .tabulator-tableholder {
                     overflow-x: visible !important;
+                    overflow-y: auto !important;
                 }
             }
         `;
@@ -216,8 +219,11 @@ export class CBBMatchupsTable extends BaseTable {
             const SCROLLBAR_WIDTH = isSmallScreen ? 0 : 17;
             const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
             
-            // Set tabulator to exact content width on both mobile and desktop.
-            // CSS !important overrides ensure these take effect over blanket rules.
+            // Set tabulator to exact content width.
+            // On desktop: CSS width:auto!important lets these inline styles work freely.
+            // On mobile: tableStyles.js has .tabulator { width: 100% !important } which
+            //   would beat inline styles. But we removed max-width constraint via CSS,
+            //   and we set min-width here to force the tabulator to stay wide.
             tableElement.style.width = totalWidth + 'px';
             tableElement.style.minWidth = totalWidth + 'px';
             tableElement.style.maxWidth = totalWidth + 'px';
@@ -230,9 +236,35 @@ export class CBBMatchupsTable extends BaseTable {
             const header = tableElement.querySelector('.tabulator-header');
             if (header) header.style.width = totalWidth + 'px';
             
-            // Container width is handled by CSS (fit-content !important).
-            // On desktop: wraps to tabulator, no horizontal scroll.
-            // On mobile: wraps to tabulator, capped at 100vw, overflow-x:auto scrolls.
+            // On mobile: also override TabManager's inline styles on the container.
+            // TabManager sets width:100%, maxWidth:100vw, overflowX:hidden.
+            // We need overflowX:auto for scrolling (CSS !important handles this),
+            // but we also clear the width so CSS fit-content can take effect.
+            if (isSmallScreen) {
+                const tc = tableElement.closest('.table-container');
+                if (tc) {
+                    // Clear TabManager's inline width so CSS !important fit-content takes effect
+                    tc.style.width = '';
+                    tc.style.minWidth = '';
+                    // Clear TabManager's inline overflow-x:hidden so CSS !important auto takes effect
+                    tc.style.overflowX = '';
+                }
+                
+                // Also set TabManager's inline styles on the tabulator itself.
+                // TabManager sets tabulator to width:100%, minWidth:0, maxWidth:100%.
+                // We need to override these to keep the tabulator at full content width.
+                // Since these are inline styles (not !important), our inline styles here win.
+                // But wait — the order matters. TabManager may run AFTER this.
+                // The CSS min-width:0!important + max-width:none!important handle the constraints,
+                // but we still need the width to stick. The CSS doesn't set width on mobile
+                // (we left the .tabulator width:100%!important from tableStyles in place),
+                // so we need to override it here. But inline can't beat !important...
+                // 
+                // The nuclear option: use style.setProperty with !important on the element.
+                tableElement.style.setProperty('width', totalWidth + 'px', 'important');
+                tableElement.style.setProperty('min-width', totalWidth + 'px', 'important');
+                tableElement.style.setProperty('max-width', totalWidth + 'px', 'important');
+            }
             
             console.log(`CBB Matchups: Set width to ${totalWidth}px (columns: ${totalColumnWidth}px + scrollbar: ${SCROLLBAR_WIDTH}px, device: ${isSmallScreen ? 'mobile' : 'desktop'})`);
         } catch (error) {
