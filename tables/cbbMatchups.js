@@ -3,11 +3,12 @@
 // Pulls from single Supabase table: CBBallMatchups
 // Spread and Total are fixed-width, equal, no filters
 //
-// WIDTH FIX STRATEGY:
-// DESKTOP: CSS override removes blanket width:100%!important and overflow-y:scroll!important
-//   from #table0-container, then JS sets tight pixel widths (columns + scrollbar).
-// MOBILE: CSS leaves tabulator at width:100% (needed for horizontal scroll).
-//   JS constrains the table-container to screen width so no extra space appears.
+// WIDTH FIX:
+// DESKTOP: CSS override on #table0-container removes blanket width:100%!important and
+//   overflow-y:scroll!important, then JS sets tight pixel widths (columns + scrollbar).
+// MOBILE: Behaves identically to Prop Odds/Game Odds tables — clears JS widths, lets
+//   CSS handle layout. Additionally sets tabulator background transparent so the grey
+//   background of the 100%-width tabulator doesn't show past the actual column content.
 
 import { BaseTable } from './baseTable.js';
 import { isMobile, isTablet } from '../shared/config.js';
@@ -40,10 +41,29 @@ export class CBBMatchupsTable extends BaseTable {
                     overflow-y: auto !important;
                 }
             }
+            
+            /* MOBILE/TABLET: The tabulator is 100% of the container (full viewport width)
+               but the actual column content is narrower (~850px on a 375px screen, so it 
+               scrolls). The grey #e8e8e8 background on .tabulator would be visible past
+               the column content since the tabulator is wider than the content. 
+               Make it transparent so only the actual rows/cells are visible. */
+            @media screen and (max-width: 1024px) {
+                #table0-container .tabulator {
+                    background: transparent !important;
+                    background-color: transparent !important;
+                }
+                #table0-container .tabulator .tabulator-tableholder {
+                    background: transparent !important;
+                    background-color: transparent !important;
+                }
+                #table0-container {
+                    background: transparent !important;
+                }
+            }
         `;
         document.head.appendChild(style);
         this._stylesInjected = true;
-        console.log('CBB Matchups: Injected desktop width override styles');
+        console.log('CBB Matchups: Injected override styles');
     }
 
     initialize() {
@@ -98,9 +118,11 @@ export class CBBMatchupsTable extends BaseTable {
             }, 100);
         });
         
-        // Run on ALL devices so mobile container gets constrained
+        // Desktop only — matches Prop Odds / Game Odds pattern
         this.table.on("renderComplete", () => {
-            setTimeout(() => this.calculateAndApplyWidths(), 100);
+            if (!isMobile() && !isTablet()) {
+                setTimeout(() => this.calculateAndApplyWidths(), 100);
+            }
         });
     }
 
@@ -149,57 +171,54 @@ export class CBBMatchupsTable extends BaseTable {
         if (totalColumn) totalColumn.setWidth(SPREAD_TOTAL_WIDTH);
     }
 
+    // Mobile: clear widths, let CSS handle (identical to Prop Odds pattern)
+    // Desktop: set tight pixel widths (CSS override lets inline styles take effect)
     calculateAndApplyWidths() {
         if (!this.table) return;
         const tableElement = this.table.element;
         if (!tableElement) return;
         
-        const isSmallScreen = isMobile() || isTablet();
+        // MOBILE/TABLET: Clear all JS widths, let CSS !important rules handle layout
+        // This is exactly what cbbPlayerPropOdds and cbbGameOdds do on mobile.
+        if (isMobile() || isTablet()) {
+            tableElement.style.width = '';
+            tableElement.style.minWidth = '';
+            tableElement.style.maxWidth = '';
+            const tc = tableElement.closest('.table-container');
+            if (tc) { tc.style.width = ''; tc.style.minWidth = ''; tc.style.maxWidth = ''; }
+            return;
+        }
         
+        // DESKTOP: Set tight pixel widths
         try {
-            if (isSmallScreen) {
-                // MOBILE/TABLET: 
-                // - Do NOT touch tabulator width — CSS keeps it at 100% for horizontal scroll
-                // - Constrain only the table-container to screen width so no extra space
-                // - Keep overflow-x:hidden on container so tableholder is the scroll target
-                const screenWidth = window.innerWidth;
-                const tc = tableElement.closest('.table-container');
-                if (tc) {
-                    tc.style.width = screenWidth + 'px';
-                    tc.style.maxWidth = screenWidth + 'px';
-                    tc.style.overflowX = 'hidden';
-                }
-            } else {
-                // DESKTOP: Set tight pixel widths (CSS override lets these take effect)
-                const tableHolder = tableElement.querySelector('.tabulator-tableholder');
-                
-                let totalColumnWidth = 0;
-                this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
-                
-                const SCROLLBAR_WIDTH = 17;
-                const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
-                
-                tableElement.style.width = totalWidth + 'px';
-                tableElement.style.minWidth = totalWidth + 'px';
-                tableElement.style.maxWidth = totalWidth + 'px';
-                
-                if (tableHolder) { 
-                    tableHolder.style.width = totalWidth + 'px'; 
-                    tableHolder.style.maxWidth = totalWidth + 'px'; 
-                }
-                
-                const header = tableElement.querySelector('.tabulator-header');
-                if (header) header.style.width = totalWidth + 'px';
-                
-                const tc = tableElement.closest('.table-container');
-                if (tc) { 
-                    tc.style.width = 'fit-content'; 
-                    tc.style.minWidth = 'auto'; 
-                    tc.style.maxWidth = 'none';
-                }
-                
-                console.log(`CBB Matchups: Desktop width set to ${totalWidth}px (columns: ${totalColumnWidth}px + scrollbar: ${SCROLLBAR_WIDTH}px)`);
+            const tableHolder = tableElement.querySelector('.tabulator-tableholder');
+            
+            let totalColumnWidth = 0;
+            this.table.getColumns().forEach(col => { if (col.isVisible()) totalColumnWidth += col.getWidth(); });
+            
+            const SCROLLBAR_WIDTH = 17;
+            const totalWidth = totalColumnWidth + SCROLLBAR_WIDTH;
+            
+            tableElement.style.width = totalWidth + 'px';
+            tableElement.style.minWidth = totalWidth + 'px';
+            tableElement.style.maxWidth = totalWidth + 'px';
+            
+            if (tableHolder) { 
+                tableHolder.style.width = totalWidth + 'px'; 
+                tableHolder.style.maxWidth = totalWidth + 'px'; 
             }
+            
+            const header = tableElement.querySelector('.tabulator-header');
+            if (header) header.style.width = totalWidth + 'px';
+            
+            const tc = tableElement.closest('.table-container');
+            if (tc) { 
+                tc.style.width = 'fit-content'; 
+                tc.style.minWidth = 'auto'; 
+                tc.style.maxWidth = 'none';
+            }
+            
+            console.log(`CBB Matchups: Desktop width set to ${totalWidth}px (columns: ${totalColumnWidth}px + scrollbar: ${SCROLLBAR_WIDTH}px)`);
         } catch (error) {
             console.error('CBB Matchups calculateAndApplyWidths error:', error);
         }
